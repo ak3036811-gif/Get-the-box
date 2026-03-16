@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Box Puzzle – Stable</title>
+
+<style>
+body {
+  margin: 0;
+  background: #2f2f2f;
+  font-family: monospace;
+  color: white;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100vh;
+}
+
+#container {
+  display: flex;
+  gap: 20px;
+}
+
+#game {
+  display: grid;
+  grid-template-columns: repeat(12, 42px);
+  grid-template-rows: repeat(12, 42px);
+  gap: 5px;
+  background: #1e1e1e;
+  padding: 12px;
+  border-radius: 10px;
+}
+
+.cell {
+  width: 42px;
+  height: 42px;
+  background: #f0f0f0;
+  border-radius: 7px;
+}
+
+.wall { background: #000; }
+.obstacle { background: #666; }
+.player { background: #6dbf6d; border-radius: 50%; }
+.box { background: #c58b45; }
+.target {
+  background: repeating-linear-gradient(
+    45deg,
+    #ddd,
+    #ddd 6px,
+    #bbb 6px,
+    #bbb 12px
+  );
+}
+.box.target { background: #88c26a; }
+
+#ui {
+  width: 220px;
+  background: #1a1a1a;
+  padding: 14px;
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+</style>
+</head>
+
+<body>
+
+<div id="container">
+  <div id="game"></div>
+  <div id="ui">
+    <div>Moves: <span id="moves">0</span></div>
+    <div>Boxes: <span id="placed">0</span> / 7</div>
+    <div>Level: <span id="level">1</span></div>
+    <div>Finished: <span id="finished">0</span></div>
+    <div style="font-size:12px;opacity:.7">W A S D</div>
+  </div>
+</div>
+
+<script>
+const SIZE = 12;
+const BOXES = 7;
+
+const game = document.getElementById("game");
+const movesEl = document.getElementById("moves");
+const placedEl = document.getElementById("placed");
+const levelEl = document.getElementById("level");
+const finishedEl = document.getElementById("finished");
+
+let map, targets, moves, level = 1, finished = 0;
+
+function rand(min, max) {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+function centerCell() {
+  return { x: rand(2, SIZE - 3), y: rand(2, SIZE - 3) };
+}
+
+function createEmptyMap() {
+  map = [];
+  for (let y = 0; y < SIZE; y++) {
+    let row = "";
+    for (let x = 0; x < SIZE; x++) {
+      row += (x === 0 || y === 0 || x === SIZE - 1 || y === SIZE - 1) ? "#" : ".";
+    }
+    map.push(row);
+  }
+}
+
+function replace(str, i, c) {
+  return str.slice(0, i) + c + str.slice(i + 1);
+}
+
+function areaClear(x, y) {
+  for (let dy = -1; dy <= 1; dy++)
+    for (let dx = -1; dx <= 1; dx++)
+      if (map[y + dy]?.[x + dx] === "B") return false;
+  return true;
+}
+
+function generateLevel() {
+  createEmptyMap();
+  targets = [];
+  moves = 0;
+
+  // obstacles
+  for (let i = 0; i < 4; i++) {
+    let c;
+    do { c = centerCell(); } while (map[c.y][c.x] !== ".");
+    map[c.y] = replace(map[c.y], c.x, "O");
+  }
+
+  // targets
+  while (targets.length < BOXES) {
+    let t = centerCell();
+    if (map[t.y][t.x] !== ".") continue;
+    if (targets.some(o => o.x === t.x && o.y === t.y)) continue;
+    targets.push(t);
+  }
+
+  // boxes
+  let placed = 0, tries = 0;
+  while (placed < BOXES && tries < 1500) {
+    tries++;
+    let b = centerCell();
+    if (map[b.y][b.x] !== ".") continue;
+    if (targets.some(t => t.x === b.x && t.y === b.y)) continue;
+    if (!areaClear(b.x, b.y)) continue;
+
+    map[b.y] = replace(map[b.y], b.x, "B");
+    placed++;
+  }
+
+  if (placed < BOXES) return false;
+
+  // player
+  let p;
+  do { p = centerCell(); } while (map[p.y][p.x] !== ".");
+  map[p.y] = replace(map[p.y], p.x, "P");
+
+  return true;
+}
+
+function draw() {
+  game.innerHTML = "";
+  let placedCount = 0;
+
+  for (let y = 0; y < SIZE; y++) {
+    for (let x = 0; x < SIZE; x++) {
+      const cell = document.createElement("div");
+      cell.className = "cell";
+
+      const c = map[y][x];
+      const isTarget = targets.some(t => t.x === x && t.y === y);
+
+      if (c === "#") cell.classList.add("wall");
+      if (c === "O") cell.classList.add("obstacle");
+      if (isTarget) cell.classList.add("target");
+      if (c === "P") cell.classList.add("player");
+      if (c === "B") {
+        cell.classList.add("box");
+        if (isTarget) placedCount++;
+      }
+
+      game.appendChild(cell);
+    }
+  }
+
+  placedEl.textContent = placedCount;
+  movesEl.textContent = moves;
+
+  if (placedCount === BOXES) {
+    setTimeout(() => {
+      alert("COMPLETED");
+      finished++;
+      level++;
+      finishedEl.textContent = finished;
+      levelEl.textContent = level;
+      startLevel();
+    }, 200);
+  }
+}
+
+function findPlayer() {
+  for (let y = 0; y < SIZE; y++)
+    for (let x = 0; x < SIZE; x++)
+      if (map[y][x] === "P") return { x, y };
+}
+
+function move(dx, dy) {
+  const p = findPlayer();
+  const nx = p.x + dx, ny = p.y + dy;
+  const next = map[ny][nx];
+
+  if (next === "#" || next === "O") return;
+
+  if (next === "B") {
+    const bx = nx + dx, by = ny + dy;
+    if (map[by][bx] !== ".") return;
+    map[by] = replace(map[by], bx, "B");
+    map[ny] = replace(map[ny], nx, ".");
+  }
+
+  map[p.y] = replace(map[p.y], p.x, ".");
+  map[ny] = replace(map[ny], nx, "P");
+
+  moves++;
+  draw();
+}
+
+function startLevel() {
+  let ok = false;
+  for (let i = 0; i < 5 && !ok; i++) ok = generateLevel();
+  if (!ok) alert("Level generation failed. Reload.");
+  draw();
+}
+
+document.addEventListener("keydown", e => {
+  if (e.key === "w") move(0,-1);
+  if (e.key === "s") move(0,1);
+  if (e.key === "a") move(-1,0);
+  if (e.key === "d") move(1,0);
+});
+
+startLevel();
+</script>
+
+</body>
+</html>
